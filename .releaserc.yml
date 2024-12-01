@@ -1,0 +1,22 @@
+{
+  "branches": ["main"],
+  "plugins":
+    [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/changelog",
+      [
+        "@semantic-release/exec",
+        {
+          "successCmd": "git add \"Blue Switch.xcodeproj/project.pbxproj\" CHANGELOG.md && git commit -m \"chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}\" && git push",
+        },
+      ],
+      [
+        "@semantic-release/github",
+        {
+          "assets":
+            [{ "path": "artifacts/app.zip", "label": "macOS Application" }],
+        },
+      ],
+    ],
+}

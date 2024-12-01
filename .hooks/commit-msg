@@ -1,0 +1,46 @@
+#!/bin/bash
+
+COMMIT_MSG_FILE="$1"
+
+# Read the first line (commit message header)
+COMMIT_MSG_HEADER=$(head -n1 "$COMMIT_MSG_FILE")
+# Read the commit message body (from the second line onwards)
+COMMIT_MSG_BODY=$(tail -n +2 "$COMMIT_MSG_FILE")
+
+# Define Conventional Commits patterns
+TYPES="build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test"
+SCOPE="(\([a-zA-Z0-9]+\))?"  # Allow alphanumeric characters in scope
+SEPARATOR=": "  # Colon and space
+SUBJECT=".+"  # Allow any characters in subject except newline
+
+# Combine patterns for reuse
+HEADER_PATTERN="^(${TYPES})${SCOPE}${SEPARATOR}${SUBJECT}$"
+
+# Check commit message header format
+if ! echo "$COMMIT_MSG_HEADER" | grep -qE "$HEADER_PATTERN"; then
+    echo "❌ Invalid commit message format"
+    echo ""
+    echo "Required format: type(scope)[:!] subject"
+    echo ""
+    echo "Allowed types:"
+    echo "  build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test"
+    echo ""
+    echo "Examples:"
+    echo "Fix Release (patches version - x.x.1):"
+    echo "  fix(pencil): stop graphite breaking when too much pressure applied"
+    echo ""
+    echo "Feature Release (minor version - x.1.x):"
+    echo "  feat(pencil): add 'graphiteWidth' option"
+    echo ""
+    echo "Breaking Release (major version - 1.x.x):"
+    echo '  perf(pencil): remove graphiteWidth option
+
+  BREAKING CHANGE: The graphiteWidth option has been removed.
+  The default graphite width of 10mm is always used for performance reasons.
+
+  (Note that the BREAKING CHANGE: token must be in the footer of the commit)'
+    echo ""
+    exit 1
+fi
+
+exit 0

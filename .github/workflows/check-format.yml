@@ -1,0 +1,70 @@
+name: Check Format
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  format:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install swift-format
+        run: brew install swift-format
+
+      - name: Format Check
+        id: format
+        run: |
+          swift format format -r ./Blue\ Switch/ -i
+          git diff > format.diff
+          if [ -s format.diff ]; then
+            echo "format_has_issues=true" >> $GITHUB_OUTPUT
+            echo "diff=$(base64 -i format.diff)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment PR
+        if: steps.format.outputs.format_has_issues == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const diff = Buffer.from('${{ steps.format.outputs.diff }}', 'base64').toString();
+
+            // Split diff by files
+            const files = diff.split('diff --git').slice(1);
+            const formattedDiffs = files.map(file => {
+              const lines = file.split('\n');
+              const filePath = lines[0].match(/b\/(.*)/)[1];
+              return `### 📝 ${filePath}\n\n\`\`\`diff\ndiff --git ${file}\`\`\`\n`;
+            }).join('\n');
+
+            const message = `
+            ## ⚠️ Formatting Issues Found
+
+            The following files have formatting issues:
+
+            ${formattedDiffs}
+
+            ### 💡 How to Fix
+            1. Run \`swift format format -r ./Blue\\ Switch/ -i\` locally
+            2. Commit and push the changes
+
+            You can set up git hooks to automatically format code on commit:
+
+            \`\`\`bash
+            sh ./setup-hooks.sh
+            \`\`\`
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: message
+            });
+            core.setFailed('Format check failed');

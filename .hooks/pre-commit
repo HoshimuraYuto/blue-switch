@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Get staged Swift files (null-delimited)
+git diff --cached --name-only --diff-filter=ACM -z | grep -z '\.swift$' | while IFS= read -r -d '' file; do
+  # Check if file exists
+  if [ -f "$file" ]; then
+    # Format the file
+    swift format -i "$file"
+
+    # Stage the formatted file
+    git add -- "$file"
+  fi
+done

@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    outputs:
+      new-release-version: ${{ steps.determine_version.outputs.new-release-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install semantic-release
+        run: npm install -g semantic-release @semantic-release/exec @semantic-release/changelog @semantic-release/git
+
+      - name: Determine version
+        id: determine_version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OUTPUT="$(semantic-release --dry-run --no-ci)"
+          NEW_RELEASE_VERSION=$(echo "$OUTPUT" | grep 'The next release version is' | sed 's/.*is \([0-9.]*\).*/\1/')
+          if [ -z "$NEW_RELEASE_VERSION" ]; then
+            NEW_RELEASE_VERSION="0.0.0"
+            echo "First commit detected, setting initial version to 0.0.0"
+          fi
+          echo "new-release-version=$NEW_RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    runs-on: macos-latest
+    outputs:
+      zip-path: ${{ steps.create_zip.outputs.zip-path }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version
+        run: |
+          echo "The version is ${{ needs.version.outputs.new-release-version }}"
+          PROJECT_FILE="Blue Switch.xcodeproj/project.pbxproj"
+          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = ${{ needs.version.outputs.new-release-version }};/g" "$PROJECT_FILE"
+          echo "Updated Marketing version to ${{ needs.version.outputs.new-release-version }}"
+          agvtool next-version -all
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.1"
+
+      - name: Build
+        run: |
+          xcodebuild clean archive \
+            -project "Blue Switch.xcodeproj" \
+            -scheme "Blue Switch" \
+            -configuration Release \
+            -archivePath "Blue Switch.xcarchive"
+
+      - name: Create ZIP
+        id: create_zip
+        run: |
+          cd "Blue Switch.xcarchive/Products/Applications"
+          ditto -c -k --sequesterRsrc --keepParent "Blue Switch.app" "../../../Blue Switch.app.zip"
+          echo "zip-path=$(realpath "../../../Blue Switch.app.zip")" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          cp "Blue Switch.app.zip" artifacts/app.zip
+          cp "Blue Switch.xcodeproj/project.pbxproj" artifacts/project.pbxproj
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts/
+
+  release:
+    needs:
+      - version
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts/
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install semantic-release
+        run: npm install -g semantic-release @semantic-release/exec @semantic-release/changelog @semantic-release/git
+
+      - name: Replace project.pbxproj
+        run: |
+          cp -f artifacts/project.pbxproj "Blue Switch.xcodeproj/project.pbxproj"
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          semantic-release
